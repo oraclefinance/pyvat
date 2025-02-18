@@ -1,11 +1,11 @@
-import requests
 import xml.dom.minidom
 
+import requests
 from requests import Timeout
 
+from .exceptions import ServerError
 from .result import VatNumberCheckResult
 from .xml_utils import get_first_child_element, get_text, NodeNotFoundError
-from .exceptions import ServerError
 
 
 class Registry(object):
@@ -190,27 +190,54 @@ class HMRCRegistry(Registry):
     Uses the HMRC API for validating VAT numbers.
     """
 
-    CHECK_VAT_SERVICE_URL = 'https://api.service.hmrc.gov.uk/organisations/' \
-                            'vat/check-vat-number/lookup/'
-    CHECK_VAT_SERVICE_TEST_URL = 'https://test-api.service.hmrc.gov.uk/organisations/' \
-                                 'vat/check-vat-number/lookup/'
+    CHECK_VAT_SERVICE_URL = 'https://api.service.hmrc.gov.uk/'
+    CHECK_VAT_SERVICE_TEST_URL = 'https://test-api.service.hmrc.gov.uk/'
     """URL for the VAT checking service.
     """
 
     DEFAULT_TIMEOUT = 8
     """Timeout for the requests."""
 
-    def check_vat_number(self, vat_number, country_code, test):
+    def get_bearer_token(self, test, CLIENT_ID, CLIENT_SECRET):
+        url = self.CHECK_VAT_SERVICE_URL
+        if test:
+            url = self.CHECK_VAT_SERVICE_TEST_URL
+        try:
+            response = requests.post(
+                url + 'oauth/token',
+                data={'client_secret': CLIENT_SECRET, 'client_id': CLIENT_ID, 'grant_type': 'client_credentials',
+                        'scope': 'read:vat'},
+                timeout=self.DEFAULT_TIMEOUT
+            )
+            access_token = response.json().get('access_token')
+            if not access_token:
+                return None
+            return 'Bearer {}'.format(access_token)
+        except Timeout as e:
+            return u'< Request to HMRC registry timed out: {}'.format(e)
+        except Exception as exception:
+            # Do not completely fail problematic requests.
+            return u'< Request failed with exception: %r' % (exception)
+
+    def check_vat_number(self, vat_number, country_code, test, **kwargs):
         # Request information about the VAT number.
         result = VatNumberCheckResult()
         result.is_valid = False
+        token = self.get_bearer_token(test, kwargs.get('client_id'), kwargs.get('client_secret'))
+        if not token:
+            result.log_lines.append(u'< Request failed with exception: Could not get access token')
+            return result
+        elif not token.startswith('Bearer '):
+            result.log_lines.append(token)
+            return result
         try:
             url = self.CHECK_VAT_SERVICE_URL
             if test:
                 url = self.CHECK_VAT_SERVICE_TEST_URL
             response = requests.get(
-                url + vat_number,
-                timeout=self.DEFAULT_TIMEOUT
+                url + 'organisations/vat/check-vat-number/lookup/' + vat_number,
+                timeout=self.DEFAULT_TIMEOUT,
+                headers={'Accept': 'application/vnd.hmrc.2.0+json', 'Authorization': token}
             )
         except Timeout as e:
             result.log_lines.append(u'< Request to HMRC registry timed out:'
@@ -267,4 +294,4 @@ class HMRCRegistry(Registry):
         return result
 
 
-__all__ = ('Registry', 'ViesRegistry', 'HMRCRegistry', )
+__all__ = ('Registry', 'ViesRegistry', 'HMRCRegistry',)

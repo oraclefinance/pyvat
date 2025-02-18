@@ -170,7 +170,7 @@ def is_vat_number_format_valid(vat_number, country_code=None):
     return True
 
 
-def check_vat_number(vat_number, country_code=None, test=False):
+def check_vat_number(vat_number, country_code=None, test=False, **kwargs):
     """Check if a VAT number is valid.
 
     If possible, the VAT number will be checked against available registries.
@@ -207,7 +207,7 @@ def check_vat_number(vat_number, country_code=None, test=False):
         return VatNumberCheckResult()
 
     return VAT_REGISTRIES[country_code].check_vat_number(vat_number,
-                                                         country_code, test)
+                                                         country_code, test, **kwargs)
 
 
 def get_sale_vat_charge(date,
